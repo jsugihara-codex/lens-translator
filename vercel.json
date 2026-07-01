@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/", "destination": "/api/index?__path=/" },
+    { "source": "/display", "destination": "/api/index?__path=/display" },
+    { "source": "/health", "destination": "/api/index?__path=/health" },
+    { "source": "/api/access", "destination": "/api/index?__path=/api/access" },
+    { "source": "/api/logout", "destination": "/api/index?__path=/api/logout" },
+    { "source": "/api/session", "destination": "/api/index?__path=/api/session" },
+    { "source": "/api/captions/:room", "destination": "/api/index?__path=/api/captions/:room" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "Permissions-Policy", "value": "camera=(), geolocation=(), microphone=(self)" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.openai.com; img-src 'self' data:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'" }
+      ]
+    }
+  ]
+}
