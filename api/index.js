@@ -10,5 +10,16 @@ export default function handler(request) {
     url.searchParams.delete("__path");
     request = new Request(url, request);
   }
-  return lensline.fetch(request, process.env, {});
+  const env = {
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    ACCESS_CODE: process.env.ACCESS_CODE,
+    ACCESS_SESSION_SECRET: process.env.ACCESS_SESSION_SECRET,
+    DISPLAY_ROOM_ID: process.env.DISPLAY_ROOM_ID,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    KV_REST_API_URL: process.env.KV_REST_API_URL,
+    KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+    VERCEL: process.env.VERCEL,
+  };
+  return lensline.fetch(request, env, {});
 }
