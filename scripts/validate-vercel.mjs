@@ -3,9 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const [vercelText, packageText, apiModule, runtimeSource, controllerSource, displaySource] = await Promise.all([
+const [vercelText, packageText, apiSource, apiModule, runtimeSource, controllerSource, displaySource] = await Promise.all([
   readFile(resolve(root, "vercel.json"), "utf8"),
   readFile(resolve(root, "package.json"), "utf8"),
+  readFile(resolve(root, "api/index.js"), "utf8"),
   import(resolve(root, "api/index.js")),
   readFile(resolve(root, "worker/index.js"), "utf8"),
   readFile(resolve(root, "worker/page-controller.js"), "utf8"),
@@ -17,6 +18,7 @@ const pkg = JSON.parse(packageText);
 assert.equal(apiModule.config?.runtime, "edge");
 assert.equal(typeof apiModule.default, "function");
 assert.equal(pkg.type, "module");
+assert.match(apiSource, /DISPLAY_ROOM_ID:\s*process\.env\.DISPLAY_ROOM_ID/, "Edge entry point must explicitly bind the fixed room environment variable");
 assert.ok(vercel.rewrites.some((route) => route.source === "/display"));
 assert.ok(vercel.rewrites.some((route) => route.source === "/api/captions/:room"));
 assert.match(displaySource, /Web app connected/);
