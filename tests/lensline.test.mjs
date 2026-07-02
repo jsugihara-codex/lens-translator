@@ -5,6 +5,7 @@ import lensline from "../worker/index.js";
 const env = {
   ACCESS_CODE: "TEST-LENSLINE-CODE",
   ACCESS_SESSION_SECRET: "test-secret-that-is-long-enough-for-hmac-signing",
+  DISPLAY_ROOM_ID: "0123456789abcdef0123456789abcdef",
 };
 
 const room = "0123456789abcdef0123456789abcdef";
@@ -32,7 +33,7 @@ test("controller requires Lensline sign-in while display remains public", async 
   const displayHtml = await display.text();
   assert.match(displayHtml, /Lensline Display/);
   assert.match(displayHtml, /Web app connected/);
-  assert.match(displayHtml, /setConnection\(/);
+  assert.match(displayHtml, /setConnection\(Boolean\(current\.live\), false\)/);
 });
 
 test("successful sign-in creates a secure controller session", async () => {
@@ -44,7 +45,20 @@ test("successful sign-in creates a secure controller session", async () => {
   const controller = await lensline.fetch(request("/", {
     headers: { cookie },
   }), env, {});
-  assert.match(await controller.text(), /Spoken language/);
+  const controllerHtml = await controller.text();
+  assert.match(controllerHtml, /Spoken language/);
+  assert.match(controllerHtml, new RegExp(env.DISPLAY_ROOM_ID));
+  assert.doesNotMatch(controllerHtml, /localStorage|getRandomValues/);
+});
+
+test("missing fixed room disables translation instead of generating a new Meta URL", async () => {
+  const cookie = await signIn("198.51.100.13");
+  const controller = await lensline.fetch(request("/", {
+    headers: { cookie },
+  }), { ...env, DISPLAY_ROOM_ID: "" }, {});
+  const controllerHtml = await controller.text();
+  assert.match(controllerHtml, /fixed Meta display room is not configured/);
+  assert.doesNotMatch(controllerHtml, /getRandomValues|localStorage/);
 });
 
 test("protected routes reject unauthenticated writes", async () => {
