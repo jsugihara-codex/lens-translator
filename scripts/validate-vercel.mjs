@@ -17,8 +17,23 @@ const vercel = JSON.parse(vercelText);
 const pkg = JSON.parse(packageText);
 assert.equal(apiModule.config?.runtime, "edge");
 assert.equal(typeof apiModule.default, "function");
+assert.equal(typeof apiModule.resolveDisplayRoomId, "function");
 assert.equal(pkg.type, "module");
 assert.match(apiSource, /DISPLAY_ROOM_ID:\s*process\.env\.DISPLAY_ROOM_ID/, "Edge entry point must explicitly bind the fixed room environment variable");
+assert.match(apiSource, /lensline-display:/, "Edge entry point must provide a stable room fallback");
+
+const derivedRoom = await apiModule.resolveDisplayRoomId("", "stable-test-secret");
+assert.match(derivedRoom, /^[a-f0-9]{32}$/);
+assert.equal(
+  derivedRoom,
+  await apiModule.resolveDisplayRoomId("", "stable-test-secret"),
+  "the fallback Meta room must remain stable"
+);
+assert.equal(
+  await apiModule.resolveDisplayRoomId("ABCDEF0123456789ABCDEF0123456789", "ignored"),
+  "abcdef0123456789abcdef0123456789",
+  "a configured room must take precedence"
+);
 assert.ok(vercel.rewrites.some((route) => route.source === "/display"));
 assert.ok(vercel.rewrites.some((route) => route.source === "/api/captions/:room"));
 assert.match(displaySource, /Web app connected/);
