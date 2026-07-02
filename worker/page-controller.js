@@ -92,6 +92,14 @@ export const E=`<!doctype html>
       .primary:disabled { cursor: wait; filter: grayscale(0.8); opacity: 0.65; transform: none; }
       .primary[data-running="true"] { color: var(--lime); background: #000; }
 
+      .session-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+      .secondary {
+        min-height: 52px; padding: 0 16px; border: 1px solid var(--line); border-radius: 0; cursor: pointer;
+        color: var(--ink); background: #000; font-weight: 720;
+      }
+      .secondary:hover { border-color: var(--lime); }
+      .secondary:disabled { cursor: wait; opacity: .5; }
+
       .meta-link { display: none; margin-top: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 0; background: #000; }
       .meta-link.visible { display: block; }
       .meta-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
@@ -133,7 +141,9 @@ export const E=`<!doctype html>
         .lede { font-size: 16px; }
         .workspace { width: 100%; grid-template-columns: minmax(0, 1fr); }
         .controls { width: 100%; min-width: 0; padding: 20px; overflow: hidden; }
-        .field, fieldset, select, .destination, .primary, .meta-link, .url-row { width: 100%; min-width: 0; max-width: 100%; }
+        .field, fieldset, select, .destination, .session-actions, .primary, .meta-link, .url-row { width: 100%; min-width: 0; max-width: 100%; }
+        .session-actions { grid-template-columns: 1fr; }
+        .secondary { width: 100%; }
         .destination label { min-width: 0; padding: 0 8px; text-align: center; }
         .url-row { flex-direction: column; }
         .url { width: 100%; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.4; }
@@ -197,7 +207,10 @@ export const E=`<!doctype html>
             </div>
           </fieldset>
 
-          <button id="start" class="primary" type="button">Start translation</button>
+          <div class="session-actions">
+            <button id="start" class="primary" type="button">Start translation</button>
+            <button id="new-session" class="secondary" type="button">New session</button>
+          </div>
           <div id="meta-link" class="meta-link">
             <div class="meta-label">Meta Display Web App URL</div>
             <div class="url-row">
@@ -228,6 +241,7 @@ export const E=`<!doctype html>
       const sourceSelect = document.querySelector('#source-language');
       const destinationInputs = [...document.querySelectorAll('input[name="destination"]')];
       const startButton = document.querySelector('#start');
+      const newSessionButton = document.querySelector('#new-session');
       const statusText = document.querySelector('#status');
       const statusDot = document.querySelector('#status-dot');
       const routeLabel = document.querySelector('#route');
@@ -245,6 +259,7 @@ export const E=`<!doctype html>
 
       if (!/^[a-f0-9]{32}$/.test(room)) {
         startButton.disabled = true;
+        newSessionButton.disabled = true;
         errorBox.textContent = 'The fixed Meta display room is not configured.';
       }
 
@@ -280,19 +295,43 @@ export const E=`<!doctype html>
       });
 
       startButton.addEventListener('click', () => running ? stopTranslation() : startTranslation());
+      newSessionButton.addEventListener('click', startNewSession);
 
-      async function startTranslation() {
-        setBusy('Connecting\u2026');
-        errorBox.textContent = '';
+      function resetTranscript() {
         completed = [];
         partial = '';
         browserCompleted = [];
         browserPartial = '';
         typingQueue = [];
+        clearTimeout(finalizationTimer);
+        clearTimeout(publishTimer);
         clearInterval(typingTimer);
         typingTimer = undefined;
-        sequence = Date.now();
+        while (captionBox.lastElementChild) captionBox.lastElementChild.remove();
         renderOutput();
+      }
+
+      async function startNewSession() {
+        newSessionButton.disabled = true;
+        startButton.disabled = true;
+        errorBox.textContent = '';
+
+        running = false;
+        cleanup();
+        sourceSelect.disabled = false;
+        destinationInputs.forEach((input) => { input.disabled = false; });
+        resetTranscript();
+        sequence = Date.now();
+        setStatus('Clearing previous session', false);
+        await publishState(true);
+        await startTranslation();
+      }
+
+      async function startTranslation() {
+        setBusy('Connecting\u2026');
+        errorBox.textContent = '';
+        resetTranscript();
+        sequence = Date.now();
 
         try {
           const tokenResponse = await fetch('/api/session', {
@@ -354,6 +393,7 @@ export const E=`<!doctype html>
           sourceSelect.disabled = true;
           destinationInputs.forEach((input) => { input.disabled = true; });
           startButton.disabled = false;
+          newSessionButton.disabled = false;
           startButton.dataset.running = 'true';
           startButton.textContent = 'Stop translation';
           setStatus('Listening', true);
@@ -365,6 +405,7 @@ export const E=`<!doctype html>
           cleanup();
           errorBox.textContent = friendlyError(error);
           startButton.disabled = false;
+          newSessionButton.disabled = false;
           startButton.dataset.running = 'false';
           startButton.textContent = 'Start translation';
           setStatus('Ready', false);
@@ -372,6 +413,7 @@ export const E=`<!doctype html>
       }
 
       function receiveDelta(delta) {
+        if (!running) return;
         partial += delta;
         if (destination === 'browser') {
           typingQueue.push(...delta);
@@ -466,8 +508,8 @@ export const E=`<!doctype html>
         publishTimer = setTimeout(publishState, immediate ? 0 : 140);
       }
 
-      function publishState() {
-        if (destination !== 'meta') return Promise.resolve();
+      function publishState(force = false) {
+        if (!force && destination !== 'meta') return Promise.resolve();
         sequence += 1;
         const sourceLabel = sourceSelect.options[sourceSelect.selectedIndex].text;
         const body = JSON.stringify({ sequence, completed, partial, sourceLabel, live: running });
@@ -517,6 +559,7 @@ export const E=`<!doctype html>
 
       function setBusy(label) {
         startButton.disabled = true;
+        newSessionButton.disabled = true;
         startButton.textContent = label;
         setStatus(label.replace('\u2026', ''), false);
       }

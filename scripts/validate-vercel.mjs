@@ -3,13 +3,14 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const [vercelText, packageText, apiSource, apiModule, runtimeSource, controllerSource, displaySource] = await Promise.all([
+const [vercelText, packageText, apiSource, apiModule, runtimeSource, controllerSource, controllerModule, displaySource] = await Promise.all([
   readFile(resolve(root, "vercel.json"), "utf8"),
   readFile(resolve(root, "package.json"), "utf8"),
   readFile(resolve(root, "api/index.js"), "utf8"),
   import(resolve(root, "api/index.js")),
   readFile(resolve(root, "worker/index.js"), "utf8"),
   readFile(resolve(root, "worker/page-controller.js"), "utf8"),
+  import(resolve(root, "worker/page-controller.js")),
   readFile(resolve(root, "worker/page-display.js"), "utf8"),
 ]);
 
@@ -47,6 +48,15 @@ assert.match(displaySource, /}, 28\);/);
 assert.match(runtimeSource, /DISPLAY_ROOM_ID/);
 assert.match(controllerSource, /__DISPLAY_ROOM_ID__/);
 assert.doesNotMatch(controllerSource, /localStorage|getRandomValues/);
+assert.match(controllerSource, /id="new-session"/);
+assert.match(controllerSource, /async function startNewSession\(\)/);
+assert.match(controllerSource, /while \(captionBox\.lastElementChild\)/);
+assert.match(controllerSource, /await publishState\(true\);/);
+
+const controllerHtml = controllerModule.E.replace("__DISPLAY_ROOM_ID__", "0123456789abcdef0123456789abcdef");
+const controllerScript = controllerHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+assert.ok(controllerScript, "controller must include its client script");
+assert.doesNotThrow(() => new Function(controllerScript), "controller client script must compile");
 
 const fixedRoom = "0123456789abcdef0123456789abcdef";
 const display = await apiModule.default(new Request(
