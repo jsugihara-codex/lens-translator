@@ -13,7 +13,7 @@ When **This browser** is selected, captions appear only on the capture page. Whe
 
 ## Deploy to Vercel
 
-1. Import this GitHub repository into Vercel.
+1. Create a private Git repository containing this project and import it into Vercel.
 2. Add an Upstash Redis database from the Vercel Marketplace, or attach an existing Upstash database.
 3. Add the environment variables below to the Vercel project for Production, Preview, and Development as appropriate.
 4. Deploy. Vercel does not need a framework preset or custom build command for this Edge Function project.
@@ -32,6 +32,8 @@ vercel --prod
 Set `OPENAI_API_KEY` as a server-side environment variable. Never expose the standard API key in browser code. The browser receives only a short-lived client secret from `/api/session`.
 
 Set `ACCESS_CODE` and `ACCESS_SESSION_SECRET` as protected server-side environment variables. The controller requires the code and receives a signed, HttpOnly, Secure, SameSite cookie for 12 hours. The display route and caption reads remain public so Meta Ray-Ban Display can load them without an interactive login. Caption publishing and Realtime session creation require the signed controller session.
+
+Set `DISPLAY_ROOM_ID` to one fixed, random, lowercase 32-character hexadecimal value. The controller uses it for every session so the Meta Web App URL remains stable across browser restarts, devices, and cleared browser storage. Generate one with `openssl rand -hex 16`, store it only in Vercel, and keep using the production domain rather than a per-deployment preview URL.
 
 Generate the session secret with:
 
@@ -65,14 +67,13 @@ npm test
 npm run validate
 ```
 
-The tests validate the controller gate, secure session cookie, protected API routes, public glasses display, public caption reads, restart-safe caption sequences, and access-code lockout.
+The tests validate the controller gate, secure session cookie, protected API routes, public glasses display, public caption reads, and access-code lockout.
 
 ## Product notes
 
 - The source-language picker labels the meeting language; the translation model handles source-language recognition.
 - The target is fixed to English.
 - Audio is sent from the Mac browser to OpenAI. Only translated text is relayed to the Meta Display route.
-- The display room identifier is cryptographically random and persists in the Mac browser so the glasses connection survives controller reloads.
-- The Meta page shows a connected indicator before translated words arrive and receives a heartbeat while the MacBook session is active.
+- The display room identifier is configured once in Vercel so the glasses URL remains stable across controller sessions and browser changes.
 - Both interfaces use a black-and-phosphor-green terminal-inspired visual system.
 - Vercel must be able to reach OpenAI and Upstash from the deployment region. Moving hosts does not bypass OpenAI regional availability requirements for the Mac browser establishing the Realtime connection.
