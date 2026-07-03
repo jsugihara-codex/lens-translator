@@ -41,6 +41,8 @@ test("successful sign-in creates a secure controller session", async () => {
   assert.match(cookie, /HttpOnly/);
   assert.match(cookie, /Secure/);
   assert.match(cookie, /SameSite=Strict/);
+  assert.match(cookie, /Max-Age=2592000/);
+  assert.match(cookie, /Expires=/);
 
   const controller = await lensline.fetch(request("/", {
     headers: { cookie },
