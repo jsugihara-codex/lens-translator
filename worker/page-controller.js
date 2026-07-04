@@ -294,6 +294,8 @@ export const E=`<!doctype html>
       let microphoneSpeechActive = false;
       let microphoneSpeechSince = 0;
       let microphoneQuietSince = 0;
+      let realtimeSpeechActive = false;
+      let realtimeSpeechTimer;
       let turnHasOutput = false;
 
       destinationInputs.forEach((input) => input.addEventListener('change', () => {
@@ -389,6 +391,19 @@ export const E=`<!doctype html>
           eventChannel = peerConnection.createDataChannel('oai-events');
           eventChannel.onmessage = ({ data }) => {
             const event = JSON.parse(data);
+            if (event.type === 'input_audio_buffer.speech_started') {
+              turnHasOutput = false;
+              clearTimeout(realtimeSpeechTimer);
+              realtimeSpeechTimer = setTimeout(() => {
+                realtimeSpeechActive = true;
+                maybeShowProcessing();
+              }, 650);
+            }
+            if (event.type === 'input_audio_buffer.speech_stopped') {
+              clearTimeout(realtimeSpeechTimer);
+              realtimeSpeechTimer = undefined;
+              realtimeSpeechActive = false;
+            }
             if (event.type === 'session.output_transcript.delta' && event.delta) {
               turnHasOutput = true;
               setProcessing(false);
@@ -490,13 +505,13 @@ export const E=`<!doctype html>
             const level = Math.sqrt(sum / samples.length);
             const now = Date.now();
 
-            if (level >= .025) {
+            if (level >= .012) {
               microphoneQuietSince = 0;
               if (!microphoneSpeechSince) {
                 microphoneSpeechSince = now;
                 turnHasOutput = false;
               }
-              if (!microphoneSpeechActive && now - microphoneSpeechSince >= 1000) {
+              if (!microphoneSpeechActive && now - microphoneSpeechSince >= 650) {
                 microphoneSpeechActive = true;
                 maybeShowProcessing();
               }
@@ -528,6 +543,9 @@ export const E=`<!doctype html>
         microphoneSpeechActive = false;
         microphoneSpeechSince = 0;
         microphoneQuietSince = 0;
+        clearTimeout(realtimeSpeechTimer);
+        realtimeSpeechTimer = undefined;
+        realtimeSpeechActive = false;
         turnHasOutput = false;
       }
 
@@ -655,7 +673,7 @@ export const E=`<!doctype html>
       }
 
       function maybeShowProcessing() {
-        if (microphoneSpeechActive && !turnHasOutput && !translationIsWriting()) {
+        if ((microphoneSpeechActive || realtimeSpeechActive) && !turnHasOutput && !translationIsWriting()) {
           setProcessing(true);
         }
       }
