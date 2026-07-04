@@ -351,7 +351,7 @@ export const E=`<!doctype html>
           });
 
           const tokenData = await tokenResponse.json();
-          if (!tokenResponse.ok) throw new Error(tokenData.error || 'Could not create a translation session.');
+          if (!tokenResponse.ok) throw new Error(readableError(tokenData, 'Could not create a translation session.'));
 
           sourceStream = await requestMicrophone();
           microphoneNeedsRecovery = false;
@@ -391,7 +391,7 @@ export const E=`<!doctype html>
             body: offer.sdp
           });
 
-          if (!sdpResponse.ok) throw new Error(await sdpResponse.text());
+          if (!sdpResponse.ok) throw new Error(readableError(await sdpResponse.text(), 'Could not connect the translation audio session.'));
           await peerConnection.setRemoteDescription({ type: 'answer', sdp: await sdpResponse.text() });
 
           running = true;
@@ -609,8 +609,26 @@ export const E=`<!doctype html>
         statusDot.classList.toggle('live', live);
       }
 
+      function readableError(value, fallback) {
+        if (value instanceof Error && value.message) return readableError(value.message, fallback);
+        if (typeof value === 'string') {
+          const text = value.trim();
+          if (!text) return fallback;
+          try {
+            return readableError(JSON.parse(text), text);
+          } catch {
+            return text === '[object Object]' ? fallback : text;
+          }
+        }
+        if (value && typeof value === 'object') {
+          if (value.error) return readableError(value.error, fallback);
+          if (value.message) return readableError(value.message, fallback);
+        }
+        return fallback;
+      }
+
       function friendlyError(error) {
-        const message = String(error?.message || error);
+        const message = readableError(error, 'Translation could not start. Check the API configuration and try again.');
         if (message.includes('Permission denied') || message.includes('NotAllowedError')) {
           return 'Microphone access was blocked. Allow microphone access in your browser and try again.';
         }

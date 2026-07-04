@@ -62,7 +62,9 @@ assert.match(
   /emptyState\.querySelector\('strong'\)\.textContent = 'Captions will appear here';/,
   "browser output must restore its own empty-state copy after Meta output"
 );
-assert.match(runtimeSource, /detected source language is English/, "translation sessions must suppress detected English speech");
+assert.doesNotMatch(runtimeSource, /instructions:"Translate non-English speech/, "translation client secrets must not include unsupported session instructions");
+assert.match(controllerSource, /function readableError\(value, fallback\)/, "controller must normalize structured API errors");
+assert.match(controllerSource, /value\.error/, "controller must extract nested API error messages");
 assert.match(controllerSource, /async function requestMicrophone\(\)/, "controller must request a fresh microphone stream when translation restarts");
 assert.match(controllerSource, /AVAudioSessionCaptureDevice/, "microphone recovery must recognize the iOS capture-device failure");
 assert.match(controllerSource, /getUserMedia\(\{ audio: true \}\)/, "microphone recovery must retry with basic audio constraints");
