@@ -55,6 +55,14 @@ assert.match(controllerSource, /id="new-session"/);
 assert.match(controllerSource, /async function startNewSession\(\)/);
 assert.match(controllerSource, /while \(captionBox\.lastElementChild\)/);
 assert.match(controllerSource, /await publishState\(true\);/);
+assert.doesNotMatch(controllerSource, /await startTranslation\(\);/, "new-session reset must wait for an explicit Start translation action");
+assert.match(controllerSource, /setStatus\('New session ready'/, "new-session reset must leave the controller idle");
+assert.match(
+  controllerSource,
+  /emptyState\.querySelector\('strong'\)\.textContent = 'Captions will appear here';/,
+  "browser output must restore its own empty-state copy after Meta output"
+);
+assert.match(runtimeSource, /detected source language is English/, "translation sessions must suppress detected English speech");
 
 const controllerHtml = controllerModule.E.replace("__DISPLAY_ROOM_ID__", "0123456789abcdef0123456789abcdef");
 const controllerScript = controllerHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];
