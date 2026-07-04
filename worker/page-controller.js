@@ -287,6 +287,13 @@ export const E=`<!doctype html>
       let typingQueue = [];
       let microphoneNeedsRecovery = false;
       let processing = false;
+      let audioContext;
+      let microphoneSource;
+      let microphoneAnalyser;
+      let microphoneMonitorTimer;
+      let microphoneSpeechActive = false;
+      let microphoneQuietSince = 0;
+      let turnHasOutput = false;
 
       destinationInputs.forEach((input) => input.addEventListener('change', () => {
         destination = document.querySelector('input[name="destination"]:checked').value;
@@ -385,6 +392,7 @@ export const E=`<!doctype html>
               setProcessing(true);
             }
             if (event.type === 'session.output_transcript.delta' && event.delta) {
+              turnHasOutput = true;
               setProcessing(false);
               receiveDelta(event.delta);
             }
@@ -409,6 +417,7 @@ export const E=`<!doctype html>
           await peerConnection.setRemoteDescription({ type: 'answer', sdp: await sdpResponse.text() });
 
           running = true;
+          await startMicrophoneMonitor(sourceStream);
           sourceSelect.disabled = true;
           destinationInputs.forEach((input) => { input.disabled = true; });
           startButton.disabled = false;
@@ -456,6 +465,66 @@ export const E=`<!doctype html>
           await new Promise((resolve) => setTimeout(resolve, 650));
           return navigator.mediaDevices.getUserMedia({ audio: true });
         }
+      }
+
+      async function startMicrophoneMonitor(stream) {
+        stopMicrophoneMonitor();
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+
+        try {
+          audioContext = new AudioContextClass();
+          await audioContext.resume();
+          microphoneSource = audioContext.createMediaStreamSource(stream);
+          microphoneAnalyser = audioContext.createAnalyser();
+          microphoneAnalyser.fftSize = 512;
+          microphoneAnalyser.smoothingTimeConstant = .35;
+          microphoneSource.connect(microphoneAnalyser);
+          const samples = new Uint8Array(microphoneAnalyser.fftSize);
+
+          microphoneMonitorTimer = setInterval(() => {
+            microphoneAnalyser.getByteTimeDomainData(samples);
+            let sum = 0;
+            for (const sample of samples) {
+              const centered = (sample - 128) / 128;
+              sum += centered * centered;
+            }
+            const level = Math.sqrt(sum / samples.length);
+            const now = Date.now();
+
+            if (level >= .025) {
+              microphoneQuietSince = 0;
+              if (!microphoneSpeechActive) {
+                microphoneSpeechActive = true;
+                turnHasOutput = false;
+                setProcessing(true);
+              }
+            } else if (microphoneSpeechActive) {
+              if (!microphoneQuietSince) microphoneQuietSince = now;
+              if (now - microphoneQuietSince >= 450) {
+                microphoneSpeechActive = false;
+                microphoneQuietSince = 0;
+                if (turnHasOutput) setProcessing(false);
+              }
+            }
+          }, 80);
+        } catch {
+          stopMicrophoneMonitor();
+        }
+      }
+
+      function stopMicrophoneMonitor() {
+        clearInterval(microphoneMonitorTimer);
+        microphoneMonitorTimer = undefined;
+        microphoneSource?.disconnect();
+        microphoneAnalyser?.disconnect();
+        audioContext?.close();
+        microphoneSource = undefined;
+        microphoneAnalyser = undefined;
+        audioContext = undefined;
+        microphoneSpeechActive = false;
+        microphoneQuietSince = 0;
+        turnHasOutput = false;
       }
 
       function receiveDelta(delta) {
@@ -614,6 +683,7 @@ export const E=`<!doctype html>
         clearTimeout(finalizationTimer);
         clearTimeout(publishTimer);
         clearInterval(heartbeatTimer);
+        stopMicrophoneMonitor();
         heartbeatTimer = undefined;
         eventChannel?.close();
         peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
