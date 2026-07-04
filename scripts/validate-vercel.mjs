@@ -70,8 +70,10 @@ assert.match(controllerSource, /AVAudioSessionCaptureDevice/, "microphone recove
 assert.match(controllerSource, /getUserMedia\(\{ audio: true \}\)/, "microphone recovery must retry with basic audio constraints");
 assert.match(controllerSource, /translatedAudio\.load\(\)/, "stopping translation must release the iOS audio output route");
 assert.match(controllerSource, /createMediaStreamSource\(stream\)/, "processing indicator must detect speech from the local microphone stream");
-assert.match(controllerSource, /level >= \.025/, "microphone activity must trigger the processing indicator");
-assert.match(controllerSource, /now - microphoneSpeechSince >= 1000/, "processing indicator must require one second of sustained speech");
+assert.match(controllerSource, /level >= \.012/, "low-level Bluetooth microphone activity must trigger the processing indicator");
+assert.match(controllerSource, /now - microphoneSpeechSince >= 650/, "processing indicator must require 650ms of sustained local speech");
+assert.match(controllerSource, /input_audio_buffer\.speech_started/, "Realtime speech detection must provide a fallback for mobile audio analysers");
+assert.match(controllerSource, /setTimeout\(\(\) => \{[\s\S]*realtimeSpeechActive = true;[\s\S]*\}, 650\);/, "Realtime speech detection must use the same 650ms delay");
 assert.match(controllerSource, /!translationIsWriting\(\)/, "browser processing indicator must stay hidden while translated text is being written");
 assert.match(displaySource, /processingRequested && !translationIsWriting/, "Meta processing indicator must stay hidden while translated text is being written");
 assert.match(controllerSource, /startMicrophoneMonitor\(sourceStream\)/, "microphone monitoring must begin after translation connects");
