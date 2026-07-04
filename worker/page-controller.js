@@ -273,6 +273,7 @@ export const E=`<!doctype html>
       let peerConnection;
       let eventChannel;
       let sourceStream;
+      let outboundMicrophoneTrack;
       let translatedAudio;
       let finalizationTimer;
       let publishTimer;
@@ -375,7 +376,8 @@ export const E=`<!doctype html>
           microphoneNeedsRecovery = false;
 
           peerConnection = new RTCPeerConnection();
-          peerConnection.addTrack(sourceStream.getAudioTracks()[0], sourceStream);
+          outboundMicrophoneTrack = sourceStream.getAudioTracks()[0].clone();
+          peerConnection.addTrack(outboundMicrophoneTrack, new MediaStream([outboundMicrophoneTrack]));
           translatedAudio = new Audio();
           translatedAudio.autoplay = true;
           translatedAudio.muted = true;
@@ -474,6 +476,8 @@ export const E=`<!doctype html>
       }
 
       function releaseMicrophone() {
+        outboundMicrophoneTrack?.stop();
+        outboundMicrophoneTrack = undefined;
         sourceStream?.getTracks().forEach((track) => track.stop());
         sourceStream = undefined;
         microphoneNeedsRecovery = false;
@@ -705,6 +709,7 @@ export const E=`<!doctype html>
         processing = false;
         running = false;
         sourceStream?.getAudioTracks().forEach((track) => { track.enabled = false; });
+        if (outboundMicrophoneTrack) outboundMicrophoneTrack.enabled = false;
         setStatus('Stopping', false);
         await publishState();
         await cleanup(true);
@@ -726,6 +731,8 @@ export const E=`<!doctype html>
         if (eventChannel) eventChannel.onmessage = null;
         eventChannel?.close();
         peerConnection?.getReceivers().forEach((receiver) => receiver.track?.stop());
+        outboundMicrophoneTrack?.stop();
+        outboundMicrophoneTrack = undefined;
         if (preserveMicrophone && sourceStream?.getAudioTracks()[0]?.readyState === 'live') {
           sourceStream.getAudioTracks().forEach((track) => { track.enabled = false; });
         } else {

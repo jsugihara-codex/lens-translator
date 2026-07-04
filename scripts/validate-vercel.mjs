@@ -73,6 +73,9 @@ assert.match(controllerSource, /getReceivers\(\)\.forEach/, "cleanup must stop t
 assert.match(controllerSource, /try \{ await context\.close\(\); \}/, "cleanup must wait for the Web Audio context to close");
 assert.match(controllerSource, /reusableTrack\?\.readyState === 'live'/, "restart must reuse the authorized live microphone track");
 assert.match(controllerSource, /reusableTrack\.enabled = true/, "restart must re-enable the preserved microphone track");
+assert.match(controllerSource, /sourceStream\.getAudioTracks\(\)\[0\]\.clone\(\)/, "each WebRTC session must use a disposable clone of the preserved microphone track");
+assert.match(controllerSource, /addTrack\(outboundMicrophoneTrack, new MediaStream/, "the preserved capture track must not be attached directly to WebRTC");
+assert.match(controllerSource, /outboundMicrophoneTrack\?\.stop\(\)/, "cleanup must stop the disposable WebRTC microphone track");
 assert.match(controllerSource, /await cleanup\(true\);/, "stopping translation must preserve the microphone for restart");
 assert.match(controllerSource, /track\.enabled = false/, "stopping translation must immediately stop sending microphone audio");
 assert.match(controllerSource, /pagehide', releaseMicrophone/, "leaving the page must fully release the preserved microphone");
