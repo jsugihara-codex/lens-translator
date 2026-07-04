@@ -292,6 +292,7 @@ export const E=`<!doctype html>
       let microphoneAnalyser;
       let microphoneMonitorTimer;
       let microphoneSpeechActive = false;
+      let microphoneSpeechSince = 0;
       let microphoneQuietSince = 0;
       let turnHasOutput = false;
 
@@ -388,9 +389,6 @@ export const E=`<!doctype html>
           eventChannel = peerConnection.createDataChannel('oai-events');
           eventChannel.onmessage = ({ data }) => {
             const event = JSON.parse(data);
-            if (event.type === 'input_audio_buffer.speech_started') {
-              setProcessing(true);
-            }
             if (event.type === 'session.output_transcript.delta' && event.delta) {
               turnHasOutput = true;
               setProcessing(false);
@@ -494,15 +492,20 @@ export const E=`<!doctype html>
 
             if (level >= .025) {
               microphoneQuietSince = 0;
-              if (!microphoneSpeechActive) {
-                microphoneSpeechActive = true;
+              if (!microphoneSpeechSince) {
+                microphoneSpeechSince = now;
                 turnHasOutput = false;
-                setProcessing(true);
               }
-            } else if (microphoneSpeechActive) {
+              if (!microphoneSpeechActive && now - microphoneSpeechSince >= 1000) {
+                microphoneSpeechActive = true;
+                maybeShowProcessing();
+              }
+            } else if (microphoneSpeechSince || microphoneSpeechActive) {
               if (!microphoneQuietSince) microphoneQuietSince = now;
-              if (now - microphoneQuietSince >= 450) {
+              const silenceThreshold = microphoneSpeechActive ? 450 : 180;
+              if (now - microphoneQuietSince >= silenceThreshold) {
                 microphoneSpeechActive = false;
+                microphoneSpeechSince = 0;
                 microphoneQuietSince = 0;
                 if (turnHasOutput) setProcessing(false);
               }
@@ -523,6 +526,7 @@ export const E=`<!doctype html>
         microphoneAnalyser = undefined;
         audioContext = undefined;
         microphoneSpeechActive = false;
+        microphoneSpeechSince = 0;
         microphoneQuietSince = 0;
         turnHasOutput = false;
       }
@@ -561,6 +565,7 @@ export const E=`<!doctype html>
           if (next === undefined) {
             clearInterval(typingTimer);
             typingTimer = undefined;
+            maybeShowProcessing();
             return;
           }
 
@@ -642,6 +647,16 @@ export const E=`<!doctype html>
         if (destination === 'meta') {
           clearTimeout(publishTimer);
           publishState();
+        }
+      }
+
+      function translationIsWriting() {
+        return Boolean(typingTimer || typingQueue.length);
+      }
+
+      function maybeShowProcessing() {
+        if (microphoneSpeechActive && !turnHasOutput && !translationIsWriting()) {
+          setProcessing(true);
         }
       }
 
