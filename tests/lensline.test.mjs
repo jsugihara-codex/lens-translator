@@ -101,6 +101,8 @@ test("signed-in controller receives only an ephemeral Realtime translation secre
     const body = JSON.parse(upstream.init.body);
     assert.equal(body.session.model, "gpt-realtime-translate");
     assert.equal(body.session.audio.output.language, "en");
+    assert.match(body.session.instructions, /detected source language is English/);
+    assert.match(body.session.instructions, /no transcript output/);
   } finally {
     globalThis.fetch = originalFetch;
   }
