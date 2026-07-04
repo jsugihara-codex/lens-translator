@@ -69,6 +69,10 @@ assert.match(controllerSource, /async function requestMicrophone\(\)/, "controll
 assert.match(controllerSource, /AVAudioSessionCaptureDevice/, "microphone recovery must recognize the iOS capture-device failure");
 assert.match(controllerSource, /getUserMedia\(\{ audio: true \}\)/, "microphone recovery must retry with basic audio constraints");
 assert.match(controllerSource, /translatedAudio\.load\(\)/, "stopping translation must release the iOS audio output route");
+assert.match(controllerSource, /input_audio_buffer\.speech_started/, "processing indicator must follow Realtime speech-start events");
+assert.match(controllerSource, /setProcessing\(false\)/, "processing indicator must clear when translated text begins");
+assert.match(runtimeSource, /processing:!!e\.processing/, "caption relay must preserve processing state");
+assert.match(displaySource, /id=\\"processing\\" class=\\"processing-line\\"/, "Meta display must include the processing indicator");
 
 const controllerHtml = controllerModule.E.replace("__DISPLAY_ROOM_ID__", "0123456789abcdef0123456789abcdef");
 const controllerScript = controllerHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];
