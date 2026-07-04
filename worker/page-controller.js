@@ -324,7 +324,12 @@ export const E=`<!doctype html>
         sequence = Date.now();
         setStatus('Clearing previous session', false);
         await publishState(true);
-        await startTranslation();
+        startButton.disabled = false;
+        newSessionButton.disabled = false;
+        startButton.dataset.running = 'false';
+        startButton.textContent = 'Start translation';
+        setStatus('New session ready', false);
+        renderOutput();
       }
 
       async function startTranslation() {
@@ -477,6 +482,8 @@ export const E=`<!doctype html>
           return;
         }
 
+        emptyState.querySelector('strong').textContent = 'Captions will appear here';
+        emptyState.querySelector('p').textContent = 'Select a language and begin speaking. English text is streamed as each phrase is translated.';
         syncCaptionLines();
       }
 
