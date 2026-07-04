@@ -67,8 +67,13 @@ assert.match(controllerSource, /function readableError\(value, fallback\)/, "con
 assert.match(controllerSource, /value\.error/, "controller must extract nested API error messages");
 assert.match(controllerSource, /async function requestMicrophone\(\)/, "controller must request a fresh microphone stream when translation restarts");
 assert.match(controllerSource, /AVAudioSessionCaptureDevice/, "microphone recovery must recognize the iOS capture-device failure");
-assert.match(controllerSource, /getUserMedia\(\{ audio: true \}\)/, "microphone recovery must retry with basic audio constraints");
+assert.match(controllerSource, /\{ audio: true \},\s*\{ audio: true \}/, "microphone recovery must retry with basic audio constraints");
 assert.match(controllerSource, /translatedAudio\.load\(\)/, "stopping translation must release the iOS audio output route");
+assert.match(controllerSource, /await cleanup\(\);/, "stop and restart flows must wait for audio-route teardown");
+assert.match(controllerSource, /getReceivers\(\)\.forEach/, "cleanup must stop the remote WebRTC audio track");
+assert.match(controllerSource, /try \{ await context\.close\(\); \}/, "cleanup must wait for the Web Audio context to close");
+assert.match(controllerSource, /const attempts = \[/, "microphone recovery must make multiple fresh capture attempts");
+assert.match(controllerSource, /index === 1 \? 700 : 1400/, "microphone retries must allow iOS audio routing time to settle");
 assert.match(controllerSource, /createMediaStreamSource\(stream\)/, "processing indicator must detect speech from the local microphone stream");
 assert.match(controllerSource, /level >= \.012/, "low-level Bluetooth microphone activity must trigger the processing indicator");
 assert.match(controllerSource, /now - microphoneSpeechSince >= 300/, "processing indicator must require 300ms of sustained local speech");
