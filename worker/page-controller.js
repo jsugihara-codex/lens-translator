@@ -397,7 +397,7 @@ export const E=`<!doctype html>
               realtimeSpeechTimer = setTimeout(() => {
                 realtimeSpeechActive = true;
                 maybeShowProcessing();
-              }, 650);
+              }, 300);
             }
             if (event.type === 'input_audio_buffer.speech_stopped') {
               clearTimeout(realtimeSpeechTimer);
@@ -511,7 +511,7 @@ export const E=`<!doctype html>
                 microphoneSpeechSince = now;
                 turnHasOutput = false;
               }
-              if (!microphoneSpeechActive && now - microphoneSpeechSince >= 650) {
+              if (!microphoneSpeechActive && now - microphoneSpeechSince >= 300) {
                 microphoneSpeechActive = true;
                 maybeShowProcessing();
               }
