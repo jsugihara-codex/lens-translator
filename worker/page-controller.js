@@ -335,7 +335,7 @@ export const E=`<!doctype html>
         errorBox.textContent = '';
 
         running = false;
-        cleanup();
+        await cleanup();
         sourceSelect.disabled = false;
         destinationInputs.forEach((input) => { input.disabled = false; });
         resetTranscript();
@@ -443,7 +443,7 @@ export const E=`<!doctype html>
             if (running && destination === 'meta') publishState();
           }, 2000);
         } catch (error) {
-          cleanup();
+          await cleanup();
           errorBox.textContent = friendlyError(error);
           startButton.disabled = false;
           newSessionButton.disabled = false;
@@ -460,28 +460,44 @@ export const E=`<!doctype html>
 
         if (microphoneNeedsRecovery) {
           setStatus('Reconnecting microphone', false);
-          await new Promise((resolve) => setTimeout(resolve, 350));
+          await new Promise((resolve) => setTimeout(resolve, 700));
         }
 
-        try {
-          return await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-          });
-        } catch (error) {
-          const message = String(error?.message || error);
-          const retryable = error?.name === 'NotReadableError'
-            || error?.name === 'NotFoundError'
-            || /AVAudioSessionCaptureDevice|capture device|audio input/i.test(message);
-          if (!retryable) throw error;
+        const attempts = [
+          { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } },
+          { audio: true },
+          { audio: true }
+        ];
 
-          setStatus('Retrying microphone', false);
-          await new Promise((resolve) => setTimeout(resolve, 650));
-          return navigator.mediaDevices.getUserMedia({ audio: true });
+        for (let index = 0; index < attempts.length; index += 1) {
+          if (index > 0) {
+            setStatus('Retrying microphone ' + index + '/2', false);
+            await navigator.mediaDevices.enumerateDevices?.().catch(() => {});
+            await new Promise((resolve) => setTimeout(resolve, index === 1 ? 700 : 1400));
+          }
+
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia(attempts[index]);
+            const track = stream.getAudioTracks()[0];
+            if (!track || track.readyState !== 'live') {
+              stream.getTracks().forEach((item) => item.stop());
+              throw new DOMException('Microphone capture did not become active.', 'NotReadableError');
+            }
+            return stream;
+          } catch (error) {
+            const message = String(error?.message || error);
+            const retryable = error?.name === 'NotReadableError'
+              || error?.name === 'NotFoundError'
+              || /AVAudioSessionCaptureDevice|capture device|audio input/i.test(message);
+            if (!retryable || index === attempts.length - 1) throw error;
+          }
         }
+
+        throw new Error('The microphone did not reconnect.');
       }
 
       async function startMicrophoneMonitor(stream) {
-        stopMicrophoneMonitor();
+        await stopMicrophoneMonitor();
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) return;
 
@@ -527,16 +543,16 @@ export const E=`<!doctype html>
             }
           }, 80);
         } catch {
-          stopMicrophoneMonitor();
+          await stopMicrophoneMonitor();
         }
       }
 
-      function stopMicrophoneMonitor() {
+      async function stopMicrophoneMonitor() {
         clearInterval(microphoneMonitorTimer);
         microphoneMonitorTimer = undefined;
         microphoneSource?.disconnect();
         microphoneAnalyser?.disconnect();
-        audioContext?.close();
+        const context = audioContext;
         microphoneSource = undefined;
         microphoneAnalyser = undefined;
         audioContext = undefined;
@@ -547,6 +563,9 @@ export const E=`<!doctype html>
         realtimeSpeechTimer = undefined;
         realtimeSpeechActive = false;
         turnHasOutput = false;
+        if (context && context.state !== 'closed') {
+          try { await context.close(); } catch {}
+        }
       }
 
       function receiveDelta(delta) {
@@ -702,8 +721,9 @@ export const E=`<!doctype html>
         finalizePartial();
         processing = false;
         running = false;
+        setStatus('Stopping', false);
         await publishState();
-        cleanup();
+        await cleanup();
         sourceSelect.disabled = false;
         destinationInputs.forEach((input) => { input.disabled = false; });
         startButton.dataset.running = 'false';
@@ -712,16 +732,17 @@ export const E=`<!doctype html>
         renderOutput();
       }
 
-      function cleanup() {
+      async function cleanup() {
         clearTimeout(finalizationTimer);
         clearTimeout(publishTimer);
         clearInterval(heartbeatTimer);
-        stopMicrophoneMonitor();
         heartbeatTimer = undefined;
+        const hadSourceStream = Boolean(sourceStream);
+        const monitorShutdown = stopMicrophoneMonitor();
+        if (eventChannel) eventChannel.onmessage = null;
         eventChannel?.close();
         peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
-        peerConnection?.close();
-        if (sourceStream) microphoneNeedsRecovery = true;
+        peerConnection?.getReceivers().forEach((receiver) => receiver.track?.stop());
         sourceStream?.getTracks().forEach((track) => track.stop());
         translatedAudio?.pause();
         if (translatedAudio) {
@@ -729,6 +750,13 @@ export const E=`<!doctype html>
           translatedAudio.removeAttribute('src');
           translatedAudio.load();
         }
+        if (peerConnection) {
+          peerConnection.ontrack = null;
+          peerConnection.onconnectionstatechange = null;
+          peerConnection.close();
+        }
+        await monitorShutdown;
+        if (hadSourceStream) microphoneNeedsRecovery = true;
         eventChannel = undefined;
         peerConnection = undefined;
         sourceStream = undefined;
