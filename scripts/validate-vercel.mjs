@@ -63,6 +63,10 @@ assert.match(
   "browser output must restore its own empty-state copy after Meta output"
 );
 assert.match(runtimeSource, /detected source language is English/, "translation sessions must suppress detected English speech");
+assert.match(controllerSource, /async function requestMicrophone\(\)/, "controller must request a fresh microphone stream when translation restarts");
+assert.match(controllerSource, /AVAudioSessionCaptureDevice/, "microphone recovery must recognize the iOS capture-device failure");
+assert.match(controllerSource, /getUserMedia\(\{ audio: true \}\)/, "microphone recovery must retry with basic audio constraints");
+assert.match(controllerSource, /translatedAudio\.load\(\)/, "stopping translation must release the iOS audio output route");
 
 const controllerHtml = controllerModule.E.replace("__DISPLAY_ROOM_ID__", "0123456789abcdef0123456789abcdef");
 const controllerScript = controllerHtml.match(/<script>([\s\S]*?)<\/script>/)?.[1];

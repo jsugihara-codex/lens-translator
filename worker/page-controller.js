@@ -280,6 +280,7 @@ export const E=`<!doctype html>
       let browserCompleted = [];
       let browserPartial = '';
       let typingQueue = [];
+      let microphoneNeedsRecovery = false;
 
       destinationInputs.forEach((input) => input.addEventListener('change', () => {
         destination = document.querySelector('input[name="destination"]:checked').value;
@@ -352,9 +353,8 @@ export const E=`<!doctype html>
           const tokenData = await tokenResponse.json();
           if (!tokenResponse.ok) throw new Error(tokenData.error || 'Could not create a translation session.');
 
-          sourceStream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-          });
+          sourceStream = await requestMicrophone();
+          microphoneNeedsRecovery = false;
 
           peerConnection = new RTCPeerConnection();
           peerConnection.addTrack(sourceStream.getAudioTracks()[0], sourceStream);
@@ -414,6 +414,33 @@ export const E=`<!doctype html>
           startButton.dataset.running = 'false';
           startButton.textContent = 'Start translation';
           setStatus('Ready', false);
+        }
+      }
+
+      async function requestMicrophone() {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('This browser does not support microphone capture.');
+        }
+
+        if (microphoneNeedsRecovery) {
+          setStatus('Reconnecting microphone', false);
+          await new Promise((resolve) => setTimeout(resolve, 350));
+        }
+
+        try {
+          return await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+          });
+        } catch (error) {
+          const message = String(error?.message || error);
+          const retryable = error?.name === 'NotReadableError'
+            || error?.name === 'NotFoundError'
+            || /AVAudioSessionCaptureDevice|capture device|audio input/i.test(message);
+          if (!retryable) throw error;
+
+          setStatus('Retrying microphone', false);
+          await new Promise((resolve) => setTimeout(resolve, 650));
+          return navigator.mediaDevices.getUserMedia({ audio: true });
         }
       }
 
@@ -554,10 +581,16 @@ export const E=`<!doctype html>
         clearInterval(heartbeatTimer);
         heartbeatTimer = undefined;
         eventChannel?.close();
+        peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
         peerConnection?.close();
+        if (sourceStream) microphoneNeedsRecovery = true;
         sourceStream?.getTracks().forEach((track) => track.stop());
         translatedAudio?.pause();
-        if (translatedAudio) translatedAudio.srcObject = null;
+        if (translatedAudio) {
+          translatedAudio.srcObject = null;
+          translatedAudio.removeAttribute('src');
+          translatedAudio.load();
+        }
         eventChannel = undefined;
         peerConnection = undefined;
         sourceStream = undefined;
@@ -580,6 +613,9 @@ export const E=`<!doctype html>
         const message = String(error?.message || error);
         if (message.includes('Permission denied') || message.includes('NotAllowedError')) {
           return 'Microphone access was blocked. Allow microphone access in your browser and try again.';
+        }
+        if (/AVAudioSessionCaptureDevice|capture device|audio input/i.test(message)) {
+          return 'The microphone did not reconnect. Disconnect and reconnect the audio device, then press Start translation again.';
         }
         return message.length > 180 ? 'Translation could not start. Check the API configuration and try again.' : message;
       }
