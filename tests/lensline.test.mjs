@@ -118,6 +118,7 @@ test("signed-in controller can publish captions that the public display can read
       partial: "Next sentence",
       sourceLabel: "Spanish",
       live: true,
+      processing: true,
     }),
   }), env, {});
   assert.equal(publish.status, 200);
@@ -127,6 +128,7 @@ test("signed-in controller can publish captions that the public display can read
   const state = await read.json();
   assert.deepEqual(state.completed, ["Hello from Lensline"]);
   assert.equal(state.partial, "Next sentence");
+  assert.equal(state.processing, true);
 });
 
 test("a restarted translation session supersedes earlier sequence numbers", async () => {

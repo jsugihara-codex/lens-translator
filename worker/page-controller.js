@@ -127,6 +127,11 @@ export const E=`<!doctype html>
       .captions::-webkit-scrollbar-thumb { border: 2px solid #07170b; background: var(--lime); }
       .caption-line { margin-top: 9px; color: #1dbb4a; font-size: 13px; font-weight: 590; line-height: 1.38; letter-spacing: -0.012em; animation: lift .18s ease-out; }
       .caption-line.partial { color: var(--lime); text-shadow: 0 0 10px rgba(56,255,104,.3); }
+      .caption-line.processing { display: flex; gap: 5px; min-height: 18px; align-items: center; color: var(--lime); }
+      .processing-dot { width: 5px; height: 5px; background: currentColor; animation: processing-pulse 1.05s infinite ease-in-out; }
+      .processing-dot:nth-child(2) { animation-delay: .15s; }
+      .processing-dot:nth-child(3) { animation-delay: .3s; }
+      @keyframes processing-pulse { 0%, 70%, 100% { opacity: .22; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-3px); } }
       @keyframes lift { from { transform: translateY(12px); opacity: .2; } to { transform: translateY(0); opacity: 1; } }
 
       .error { min-height: 20px; margin: 13px 2px 0; color: var(--danger); font-size: 12px; line-height: 1.45; }
@@ -281,6 +286,7 @@ export const E=`<!doctype html>
       let browserPartial = '';
       let typingQueue = [];
       let microphoneNeedsRecovery = false;
+      let processing = false;
 
       destinationInputs.forEach((input) => input.addEventListener('change', () => {
         destination = document.querySelector('input[name="destination"]:checked').value;
@@ -304,6 +310,7 @@ export const E=`<!doctype html>
         browserCompleted = [];
         browserPartial = '';
         typingQueue = [];
+        processing = false;
         clearTimeout(finalizationTimer);
         clearTimeout(publishTimer);
         clearInterval(typingTimer);
@@ -374,8 +381,15 @@ export const E=`<!doctype html>
           eventChannel = peerConnection.createDataChannel('oai-events');
           eventChannel.onmessage = ({ data }) => {
             const event = JSON.parse(data);
+            if (event.type === 'input_audio_buffer.speech_started') {
+              setProcessing(true);
+            }
             if (event.type === 'session.output_transcript.delta' && event.delta) {
+              setProcessing(false);
               receiveDelta(event.delta);
+            }
+            if (event.type === 'session.output_transcript.done' || event.type === 'error') {
+              setProcessing(false);
             }
           };
 
@@ -517,6 +531,7 @@ export const E=`<!doctype html>
       function syncCaptionLines() {
         const lines = browserCompleted.map((text) => ({ text, partial: false }));
         if (browserPartial) lines.push({ text: browserPartial, partial: true });
+        if (processing) lines.push({ processing: true });
 
         lines.forEach((line, index) => {
           let node = captionBox.children[index];
@@ -524,9 +539,17 @@ export const E=`<!doctype html>
             node = document.createElement('div');
             captionBox.appendChild(node);
           }
-          const className = 'caption-line' + (line.partial ? ' partial' : '');
+          const className = 'caption-line' + (line.partial ? ' partial' : '') + (line.processing ? ' processing' : '');
           if (node.className !== className) node.className = className;
-          if (node.textContent !== line.text) node.textContent = line.text;
+          if (line.processing) {
+            if (node.children.length !== 3) {
+              node.innerHTML = '<span class="processing-dot"></span><span class="processing-dot"></span><span class="processing-dot"></span>';
+              node.setAttribute('aria-label', 'Processing translation');
+            }
+          } else {
+            node.removeAttribute('aria-label');
+            if (node.textContent !== line.text) node.textContent = line.text;
+          }
         });
 
         while (captionBox.children.length > lines.length) {
@@ -542,11 +565,22 @@ export const E=`<!doctype html>
         publishTimer = setTimeout(publishState, immediate ? 0 : 140);
       }
 
+      function setProcessing(value) {
+        const next = Boolean(value && running);
+        if (processing === next) return;
+        processing = next;
+        renderOutput();
+        if (destination === 'meta') {
+          clearTimeout(publishTimer);
+          publishState();
+        }
+      }
+
       function publishState(force = false) {
         if (!force && destination !== 'meta') return Promise.resolve();
         sequence += 1;
         const sourceLabel = sourceSelect.options[sourceSelect.selectedIndex].text;
-        const body = JSON.stringify({ sequence, completed, partial, sourceLabel, live: running });
+        const body = JSON.stringify({ sequence, completed, partial, sourceLabel, live: running, processing });
 
         publishChain = publishChain.then(async () => {
           const response = await fetch('/api/captions/' + room, {
@@ -564,6 +598,7 @@ export const E=`<!doctype html>
 
       async function stopTranslation() {
         finalizePartial();
+        processing = false;
         running = false;
         await publishState();
         cleanup();
