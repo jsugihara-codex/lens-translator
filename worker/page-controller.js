@@ -313,6 +313,7 @@ export const E=`<!doctype html>
 
       startButton.addEventListener('click', () => running ? stopTranslation() : startTranslation());
       newSessionButton.addEventListener('click', startNewSession);
+      window.addEventListener('pagehide', releaseMicrophone);
 
       function resetTranscript() {
         completed = [];
@@ -458,42 +459,24 @@ export const E=`<!doctype html>
           throw new Error('This browser does not support microphone capture.');
         }
 
-        if (microphoneNeedsRecovery) {
-          setStatus('Reconnecting microphone', false);
-          await new Promise((resolve) => setTimeout(resolve, 700));
+        const reusableTrack = sourceStream?.getAudioTracks()[0];
+        if (reusableTrack?.readyState === 'live') {
+          reusableTrack.enabled = true;
+          microphoneNeedsRecovery = false;
+          return sourceStream;
         }
 
-        const attempts = [
-          { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } },
-          { audio: true },
-          { audio: true }
-        ];
+        sourceStream = undefined;
+        microphoneNeedsRecovery = false;
+        return navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+      }
 
-        for (let index = 0; index < attempts.length; index += 1) {
-          if (index > 0) {
-            setStatus('Retrying microphone ' + index + '/2', false);
-            await navigator.mediaDevices.enumerateDevices?.().catch(() => {});
-            await new Promise((resolve) => setTimeout(resolve, index === 1 ? 700 : 1400));
-          }
-
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia(attempts[index]);
-            const track = stream.getAudioTracks()[0];
-            if (!track || track.readyState !== 'live') {
-              stream.getTracks().forEach((item) => item.stop());
-              throw new DOMException('Microphone capture did not become active.', 'NotReadableError');
-            }
-            return stream;
-          } catch (error) {
-            const message = String(error?.message || error);
-            const retryable = error?.name === 'NotReadableError'
-              || error?.name === 'NotFoundError'
-              || /AVAudioSessionCaptureDevice|capture device|audio input/i.test(message);
-            if (!retryable || index === attempts.length - 1) throw error;
-          }
-        }
-
-        throw new Error('The microphone did not reconnect.');
+      function releaseMicrophone() {
+        sourceStream?.getTracks().forEach((track) => track.stop());
+        sourceStream = undefined;
+        microphoneNeedsRecovery = false;
       }
 
       async function startMicrophoneMonitor(stream) {
@@ -721,9 +704,10 @@ export const E=`<!doctype html>
         finalizePartial();
         processing = false;
         running = false;
+        sourceStream?.getAudioTracks().forEach((track) => { track.enabled = false; });
         setStatus('Stopping', false);
         await publishState();
-        await cleanup();
+        await cleanup(true);
         sourceSelect.disabled = false;
         destinationInputs.forEach((input) => { input.disabled = false; });
         startButton.dataset.running = 'false';
@@ -732,7 +716,7 @@ export const E=`<!doctype html>
         renderOutput();
       }
 
-      async function cleanup() {
+      async function cleanup(preserveMicrophone = true) {
         clearTimeout(finalizationTimer);
         clearTimeout(publishTimer);
         clearInterval(heartbeatTimer);
@@ -741,9 +725,12 @@ export const E=`<!doctype html>
         const monitorShutdown = stopMicrophoneMonitor();
         if (eventChannel) eventChannel.onmessage = null;
         eventChannel?.close();
-        peerConnection?.getSenders().forEach((sender) => sender.track?.stop());
         peerConnection?.getReceivers().forEach((receiver) => receiver.track?.stop());
-        sourceStream?.getTracks().forEach((track) => track.stop());
+        if (preserveMicrophone && sourceStream?.getAudioTracks()[0]?.readyState === 'live') {
+          sourceStream.getAudioTracks().forEach((track) => { track.enabled = false; });
+        } else {
+          releaseMicrophone();
+        }
         translatedAudio?.pause();
         if (translatedAudio) {
           translatedAudio.srcObject = null;
@@ -756,10 +743,9 @@ export const E=`<!doctype html>
           peerConnection.close();
         }
         await monitorShutdown;
-        if (hadSourceStream) microphoneNeedsRecovery = true;
+        if (hadSourceStream && !preserveMicrophone) microphoneNeedsRecovery = true;
         eventChannel = undefined;
         peerConnection = undefined;
-        sourceStream = undefined;
         translatedAudio = undefined;
       }
 
