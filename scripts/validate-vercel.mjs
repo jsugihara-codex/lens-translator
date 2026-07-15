@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(new URL("..", import.meta.url).pathname);
-const [vercelText, packageText, apiSource, apiModule, runtimeSource, controllerSource, controllerModule, displaySource] = await Promise.all([
+const [vercelText, packageText, apiSource, apiModule, runtimeSource, controllerSource, controllerModule, displaySource, appIconSource] = await Promise.all([
   readFile(resolve(root, "vercel.json"), "utf8"),
   readFile(resolve(root, "package.json"), "utf8"),
   readFile(resolve(root, "api/index.js"), "utf8"),
@@ -12,6 +12,7 @@ const [vercelText, packageText, apiSource, apiModule, runtimeSource, controllerS
   readFile(resolve(root, "worker/page-controller.js"), "utf8"),
   import(resolve(root, "worker/page-controller.js")),
   readFile(resolve(root, "worker/page-display.js"), "utf8"),
+  readFile(resolve(root, "worker/app-icon.js"), "utf8"),
 ]);
 
 const vercel = JSON.parse(vercelText);
@@ -37,6 +38,14 @@ assert.equal(
 );
 assert.ok(vercel.rewrites.some((route) => route.source === "/display"));
 assert.ok(vercel.rewrites.some((route) => route.source === "/api/captions/:room"));
+for (const iconRoute of ["/manifest.webmanifest", "/app-icon-192.png", "/app-icon-512.png", "/apple-touch-icon.png", "/favicon.png"]) {
+  assert.ok(vercel.rewrites.some((route) => route.source === iconRoute), `missing ${iconRoute} rewrite`);
+}
+assert.match(controllerSource, /manifest\.webmanifest/);
+assert.match(displaySource, /manifest\.webmanifest/);
+assert.match(appIconSource, /ICON_128_BASE64/);
+assert.match(appIconSource, /ICON_192_BASE64/);
+assert.match(appIconSource, /ICON_512_BASE64/);
 assert.match(displaySource, /Web app connected/);
 assert.match(controllerSource, /font-size:\s*13px/);
 assert.match(displaySource, /font-size:\s*30px/);
@@ -109,4 +118,28 @@ const displayScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(displayScript, "Meta display must include its client script");
 assert.doesNotThrow(() => new Function(displayScript), "Meta display client script must compile");
 
-console.log("Vercel entry point, fixed Meta room, responsive display, and typewriter bundle are valid.");
+const manifestResponse = await apiModule.default(new Request(
+  "https://lensline.test/api/index?__path=/manifest.webmanifest"
+));
+assert.equal(manifestResponse.status, 200);
+assert.match(manifestResponse.headers.get("content-type"), /application\/manifest\+json/);
+const manifest = await manifestResponse.json();
+assert.equal(manifest.short_name, "Lensline");
+assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["128x128", "192x192", "512x512"]);
+assert.equal(manifest.icons[0].src, "/favicon.png");
+
+const faviconResponse = await apiModule.default(new Request(
+  "https://lensline.test/api/index?__path=/favicon.png"
+));
+assert.equal(faviconResponse.status, 200);
+assert.equal(faviconResponse.headers.get("content-type"), "image/png");
+assert.ok((await faviconResponse.arrayBuffer()).byteLength > 10000);
+
+const iconResponse = await apiModule.default(new Request(
+  "https://lensline.test/api/index?__path=/app-icon-512.png"
+));
+assert.equal(iconResponse.status, 200);
+assert.equal(iconResponse.headers.get("content-type"), "image/png");
+assert.ok((await iconResponse.arrayBuffer()).byteLength > 100000);
+
+console.log("Vercel entry point, app icons, fixed Meta room, responsive display, and typewriter bundle are valid.");

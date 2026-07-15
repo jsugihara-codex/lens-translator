@@ -4,6 +4,10 @@ export const E=`<!doctype html>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Live speech translation for Meta Ray-Ban Display">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" type="image/png" sizes="128x128" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/apple-touch-icon.png">
     <title>Lensline \u2014 Live translation</title>
     <style>
       :root {
