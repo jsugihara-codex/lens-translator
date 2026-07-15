@@ -43,6 +43,7 @@ for (const iconRoute of ["/manifest.webmanifest", "/app-icon-192.png", "/app-ico
 }
 assert.match(controllerSource, /manifest\.webmanifest/);
 assert.match(displaySource, /manifest\.webmanifest/);
+assert.match(appIconSource, /ICON_128_BASE64/);
 assert.match(appIconSource, /ICON_192_BASE64/);
 assert.match(appIconSource, /ICON_512_BASE64/);
 assert.match(displaySource, /Web app connected/);
@@ -124,7 +125,15 @@ assert.equal(manifestResponse.status, 200);
 assert.match(manifestResponse.headers.get("content-type"), /application\/manifest\+json/);
 const manifest = await manifestResponse.json();
 assert.equal(manifest.short_name, "Lensline");
-assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512"]);
+assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["128x128", "192x192", "512x512"]);
+assert.equal(manifest.icons[0].src, "/favicon.png");
+
+const faviconResponse = await apiModule.default(new Request(
+  "https://lensline.test/api/index?__path=/favicon.png"
+));
+assert.equal(faviconResponse.status, 200);
+assert.equal(faviconResponse.headers.get("content-type"), "image/png");
+assert.ok((await faviconResponse.arrayBuffer()).byteLength > 10000);
 
 const iconResponse = await apiModule.default(new Request(
   "https://lensline.test/api/index?__path=/app-icon-512.png"
