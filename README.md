@@ -11,6 +11,26 @@ Lensline is a live meeting translation web app designed for a MacBook controller
 
 When **This browser** is selected, captions appear only on the capture page. When **Meta Display** is selected, the capture page shows controls and status but sends caption text to the dedicated display route.
 
+## Run the translator locally with the hosted Meta Display
+
+The translator can run on the Mac while the Meta Display remains on Vercel. This keeps the OpenAI request on the local network and sends only translated text to the hosted display.
+
+Set these local environment variables, using the relay token configured on the hosted Meta Display:
+
+```text
+OPENAI_API_KEY=your_openai_api_key
+META_DISPLAY_ORIGIN=https://lens-translator.vercel.app
+LENSLINE_RELAY_TOKEN=the_same_long_random_value_used_in_vercel
+```
+
+Start Lensline locally (use port 3001 if another app is already using 3000):
+
+```sh
+PORT=3001 npm run dev
+```
+
+The local server authenticates to `POST /api/display-ingest` on the hosted Lens Translator app and forwards the current caption state into its native display room. The relay token is never included in browser JavaScript. The controller's Meta Display link points to `https://lens-translator.vercel.app/display` automatically.
+
 ## Deploy to Vercel
 
 1. Create a private Git repository containing this project and import it into Vercel.

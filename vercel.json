@@ -15,6 +15,7 @@
     { "source": "/api/access", "destination": "/api/index?__path=/api/access" },
     { "source": "/api/logout", "destination": "/api/index?__path=/api/logout" },
     { "source": "/api/session", "destination": "/api/index?__path=/api/session" },
+    { "source": "/api/display-ingest", "destination": "/api/index?__path=/api/display-ingest" },
     { "source": "/api/captions/:room", "destination": "/api/index?__path=/api/captions/:room" }
   ],
   "headers": [

@@ -22,6 +22,7 @@ assert.equal(typeof apiModule.default, "function");
 assert.equal(typeof apiModule.resolveDisplayRoomId, "function");
 assert.equal(pkg.type, "module");
 assert.match(apiSource, /DISPLAY_ROOM_ID:\s*process\.env\.DISPLAY_ROOM_ID/, "Edge entry point must explicitly bind the fixed room environment variable");
+assert.match(apiSource, /LENSLINE_RELAY_TOKEN:\s*process\.env\.LENSLINE_RELAY_TOKEN/, "Edge entry point must explicitly bind the server-side relay token");
 assert.match(apiSource, /lensline-display:/, "Edge entry point must provide a stable room fallback");
 
 const derivedRoom = await apiModule.resolveDisplayRoomId("", "stable-test-secret");
@@ -38,6 +39,7 @@ assert.equal(
 );
 assert.ok(vercel.rewrites.some((route) => route.source === "/display"));
 assert.ok(vercel.rewrites.some((route) => route.source === "/api/captions/:room"));
+assert.ok(vercel.rewrites.some((route) => route.source === "/api/display-ingest"));
 for (const iconRoute of ["/manifest.webmanifest", "/app-icon-192.png", "/app-icon-512.png", "/apple-touch-icon.png", "/favicon.png"]) {
   assert.ok(vercel.rewrites.some((route) => route.source === iconRoute), `missing ${iconRoute} rewrite`);
 }
@@ -117,6 +119,54 @@ assert.match(html, /Web app connected/);
 const displayScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
 assert.ok(displayScript, "Meta display must include its client script");
 assert.doesNotThrow(() => new Function(displayScript), "Meta display client script must compile");
+
+const previousEnv = {
+  DISPLAY_ROOM_ID: process.env.DISPLAY_ROOM_ID,
+  ACCESS_SESSION_SECRET: process.env.ACCESS_SESSION_SECRET,
+  LENSLINE_RELAY_TOKEN: process.env.LENSLINE_RELAY_TOKEN,
+};
+try {
+  process.env.DISPLAY_ROOM_ID = fixedRoom;
+  process.env.ACCESS_SESSION_SECRET = "relay-test-session-secret";
+  process.env.LENSLINE_RELAY_TOKEN = "relay-test-token";
+
+  const defaultDisplay = await apiModule.default(new Request(
+    "https://lensline.test/api/index?__path=/display"
+  ));
+  assert.equal(defaultDisplay.status, 200);
+  assert.match(
+    await defaultDisplay.text(),
+    new RegExp(`new URLSearchParams\\(location\\.search\\)\\.get\\('room'\\) \\|\\| '${fixedRoom}'`)
+  );
+
+  const denied = await apiModule.default(new Request(
+    "https://lensline.test/api/index?__path=/api/display-ingest",
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sequence: 1 }) }
+  ));
+  assert.equal(denied.status, 401);
+
+  const ingested = await apiModule.default(new Request(
+    "https://lensline.test/api/index?__path=/api/display-ingest",
+    {
+      method: "POST",
+      headers: { authorization: "Bearer relay-test-token", "content-type": "application/json" },
+      body: JSON.stringify({ sequence: 2, completed: ["Hosted display test"], partial: "", sourceLabel: "Japanese", live: true }),
+    }
+  ));
+  assert.equal(ingested.status, 200);
+  assert.deepEqual((await ingested.json()).completed, ["Hosted display test"]);
+
+  const hostedCaption = await apiModule.default(new Request(
+    `https://lensline.test/api/index?__path=/api/captions/${fixedRoom}&after=-1`
+  ));
+  assert.equal(hostedCaption.status, 200);
+  assert.deepEqual((await hostedCaption.json()).completed, ["Hosted display test"]);
+} finally {
+  for (const [key, value] of Object.entries(previousEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
 
 const manifestResponse = await apiModule.default(new Request(
   "https://lensline.test/api/index?__path=/manifest.webmanifest"

@@ -262,8 +262,10 @@ export const E=`<!doctype html>
       const copyButton = document.querySelector('#copy');
 
       const room = '__DISPLAY_ROOM_ID__';
-      const displayUrl = new URL('/display', location.origin);
-      displayUrl.searchParams.set('room', room);
+      const hostedDisplayOrigin = '__META_DISPLAY_ORIGIN__';
+      const hasHostedDisplay = /^https?:\/\//.test(hostedDisplayOrigin);
+      const displayUrl = new URL('/display', hasHostedDisplay ? hostedDisplayOrigin : location.origin);
+      if (!hasHostedDisplay) displayUrl.searchParams.set('room', room);
       displayUrlNode.textContent = displayUrl.toString();
 
       if (!/^[a-f0-9]{32}$/.test(room)) {
@@ -284,6 +286,8 @@ export const E=`<!doctype html>
       let typingTimer;
       let heartbeatTimer;
       let publishChain = Promise.resolve();
+      let pendingPublishBody = '';
+      let publishInFlight = false;
       let sequence = 0;
       let completed = [];
       let partial = '';
@@ -445,6 +449,7 @@ export const E=`<!doctype html>
           startButton.dataset.running = 'true';
           startButton.textContent = 'Stop translation';
           setStatus('Listening', true);
+          renderOutput();
           await publishState();
           heartbeatTimer = setInterval(() => {
             if (running && destination === 'meta') publishState();
@@ -692,17 +697,27 @@ export const E=`<!doctype html>
         if (!force && destination !== 'meta') return Promise.resolve();
         sequence += 1;
         const sourceLabel = sourceSelect.options[sourceSelect.selectedIndex].text;
-        const body = JSON.stringify({ sequence, completed, partial, sourceLabel, live: running, processing });
+        pendingPublishBody = JSON.stringify({ sequence, completed, partial, sourceLabel, live: running, processing });
+        if (publishInFlight) return publishChain;
 
-        publishChain = publishChain.then(async () => {
-          const response = await fetch('/api/captions/' + room, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body
-          });
-          if (!response.ok) throw new Error('Display relay returned ' + response.status);
-        }).catch(() => {
-          setStatus('Display reconnecting', false);
+        publishInFlight = true;
+        publishChain = (async () => {
+          while (pendingPublishBody) {
+            const body = pendingPublishBody;
+            pendingPublishBody = '';
+            try {
+              const response = await fetch('/api/captions/' + room, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body
+              });
+              if (!response.ok) throw new Error('Display relay returned ' + response.status);
+            } catch {
+              setStatus('Display reconnecting', false);
+            }
+          }
+        })().finally(() => {
+          publishInFlight = false;
         });
 
         return publishChain;
