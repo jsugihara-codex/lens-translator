@@ -7,7 +7,7 @@ import {
 
 const port = Number(process.env.PORT || 3000);
 
-process.env.ACCESS_CODE ||= "local";
+process.env.ACCESS_CODE ||= "lensline";
 process.env.ACCESS_SESSION_SECRET ||= "lensline-local-development-session-secret";
 
 const metaDisplayRelay = getMetaDisplayRelayConfig();
@@ -47,8 +47,7 @@ const server = http.createServer(async (incoming, outgoing) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`Lensline is running at http://localhost:${port}`);
-  console.log(`Local access code: ${process.env.ACCESS_CODE}`);
+  console.log(`Lensline is running at http://127.0.0.1:${port}`);
   console.log(
     metaDisplayRelay
       ? `Meta Display relay: ${metaDisplayRelay.endpoint.origin}/display`

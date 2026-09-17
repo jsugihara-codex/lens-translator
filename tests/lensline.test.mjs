@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { TARGET_LANGUAGES } from "../worker/languages.js";
 import lensline from "../worker/index.js";
 
 const env = {
@@ -49,6 +50,28 @@ test("successful sign-in creates a secure controller session", async () => {
   }), env, {});
   const controllerHtml = await controller.text();
   assert.match(controllerHtml, /Spoken language/);
+  assert.match(controllerHtml, /<label for="input-source">Input source<\/label>/);
+  assert.match(controllerHtml, /<option value="microphone">Microphone<\/option>/);
+  assert.match(controllerHtml, /<option value="browser_tab_and_microphone">Browser tab \+ microphone<\/option>/);
+  assert.match(controllerHtml, /<button id="pause" class="pause-control"[^>]*aria-label="Pause translation"[^>]*>/);
+  assert.match(controllerHtml, /<path class="pause-glyph"/);
+  assert.match(controllerHtml, /<path class="resume-glyph"/);
+  const stageStyles = controllerHtml.match(/\.stage \{([^}]+)\}/)?.[1] || "";
+  assert.match(stageStyles, /flex-direction:\s*column/);
+  assert.match(stageStyles, /height:\s*auto/);
+  assert.doesNotMatch(stageStyles, /(?:^|[;\s])height:\s*430px/);
+  const stageHeaderStyles = controllerHtml.match(/\.stage-top \{([^}]+)\}/)?.[1] || "";
+  assert.match(stageHeaderStyles, /position:\s*relative/);
+  assert.match(stageHeaderStyles, /flex:\s*0 0 auto/);
+  const stageBodyStyles = controllerHtml.match(/\.stage-body \{([^}]+)\}/)?.[1] || "";
+  assert.match(stageBodyStyles, /position:\s*absolute/);
+  assert.match(stageBodyStyles, /inset:\s*var\(--stage-header-height\) 0 0/);
+  assert.match(stageBodyStyles, /overflow:\s*hidden/);
+  const captionStyles = controllerHtml.match(/\.captions \{([^}]+)\}/)?.[1] || "";
+  assert.match(captionStyles, /flex:\s*1 1 auto/);
+  assert.match(captionStyles, /min-height:\s*0/);
+  assert.match(controllerHtml, /navigator\.mediaDevices\.getDisplayMedia/);
+  assert.match(controllerHtml, /createMediaStreamDestination/);
   assert.match(controllerHtml, new RegExp(env.DISPLAY_ROOM_ID));
   assert.doesNotMatch(controllerHtml, /localStorage|getRandomValues/);
 });
@@ -92,16 +115,17 @@ test("signed-in controller receives only an ephemeral Realtime translation secre
     const response = await lensline.fetch(request("/api/session", {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ targetLanguage: "en", room }),
+      body: JSON.stringify({ sourceLanguage: "ja", targetLanguage: "en", room }),
     }), { ...env, OPENAI_API_KEY: "server-only-test-key" }, {});
     assert.equal(response.status, 200);
     assert.equal((await response.json()).value, "ephemeral-client-secret");
-    assert.equal(upstream.url, "https://api.openai.com/v1/realtime/translations/client_secrets");
+    assert.equal(upstream.url, "https://api.openai.com/v1/realtime/client_secrets");
     assert.equal(upstream.init.headers.authorization, "Bearer server-only-test-key");
     const body = JSON.parse(upstream.init.body);
-    assert.equal(body.session.model, "gpt-realtime-translate");
-    assert.equal(body.session.audio.output.language, "en");
-    assert.equal(body.session.instructions, undefined);
+    assert.equal(body.session.model, "gpt-realtime");
+    assert.deepEqual(body.session.output_modalities, ["text"]);
+    assert.match(body.session.instructions, /Only translate ja speech/);
+    assert.equal(body.session.tool_choice.name, "submit_translation");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -244,4 +268,72 @@ test("Vercel Redis REST storage carries captions between controller and display 
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+
+test("every supported output language is forwarded and invalid targets never reach OpenAI", async () => {
+  const cookie = await signIn();
+  const originalFetch = globalThis.fetch;
+  const upstream = [];
+  globalThis.fetch = async (_url, init) => {
+    upstream.push(JSON.parse(init.body));
+    return Response.json({ value: "ephemeral-client-secret" });
+  };
+  const session = (body) => lensline.fetch(request("/api/session", {
+    method: "POST", headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify(body),
+  }), { ...env, OPENAI_API_KEY: "server-only-test-key" }, {});
+  try {
+    for (const [code] of TARGET_LANGUAGES) {
+      const sourceLanguage = code === "en" ? "ja" : "en";
+      for (const translateBoth of [false, true]) {
+        assert.equal((await session({ sourceLanguage, targetLanguage: code, translateBoth })).status, 200);
+        const config = upstream.at(-1).session;
+        assert.deepEqual(config.tools[0].parameters.properties.segments.items.properties.targetLanguage.enum, [sourceLanguage, code]);
+        assert.match(config.instructions, translateBoth ? /Also translate/ : /Only translate/);
+      }
+    }
+    const count = upstream.length;
+    for (const targetLanguage of ["auto", "", "EN", null, 42, {}, ["ja"]]) {
+      assert.equal((await session({ sourceLanguage: "en", targetLanguage })).status, 400);
+    }
+    for (const sourceLanguage of [undefined, "auto", "", "invalid", null, 42]) {
+      assert.equal((await session({ sourceLanguage, targetLanguage: "en" })).status, 400);
+    }
+    for (const body of [null, [], "ja", {},
+      { sourceLanguage: "en", targetLanguage: "en" },
+      { sourceLanguage: "zh", targetLanguage: "zh-Hant-TW" },
+      { sourceLanguage: "en", targetLanguage: "ja", translateBoth: "false" },
+    ]) assert.equal((await session(body)).status, 400);
+    assert.equal(upstream.length, count);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("caption relay preserves translation language and multilingual text", async () => {
+  const cookie = await signIn();
+  const languageRoom = "abcdef0123456789abcdef0123456789";
+  const response = await lensline.fetch(request(`/api/captions/${languageRoom}`, {
+    method: "POST", headers: { "content-type": "application/json", cookie },
+    body: JSON.stringify({ sequence: 1, sourceLabel: "English", targetLanguage: "ja", completed: ["こんにちは、世界。"], partial: "次の文章", live: true }),
+  }), env, {});
+  assert.equal(response.status, 200);
+  const state = await (await lensline.fetch(request(`/api/captions/${languageRoom}?after=-1`), env, {})).json();
+  assert.equal(state.targetLanguage, "ja");
+  assert.equal(state.sourceLabel, "English");
+  assert.deepEqual(state.completed, ["こんにちは、世界。"]);
+  assert.equal(state.partial, "次の文章");
+});
+
+
+test("Traditional Chinese converter is served locally with immutable caching", async () => {
+  const response = await lensline.fetch(request("/assets/opencc-cn2t-1.4.2.js"), env, {});
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /javascript/);
+  assert.match(response.headers.get("cache-control"), /immutable/);
+  const code = await response.text();
+  assert.match(code, /MIT License/);
+  assert.match(code, /Apache License/);
+  assert.match(code, /Converter/);
 });

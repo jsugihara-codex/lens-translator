@@ -50,7 +50,11 @@ assert.match(appIconSource, /ICON_192_BASE64/);
 assert.match(appIconSource, /ICON_512_BASE64/);
 assert.match(displaySource, /Web app connected/);
 assert.match(controllerSource, /font-size:\s*13px/);
-assert.match(displaySource, /font-size:\s*30px/);
+assert.match(
+  displaySource,
+  /\.line \{[^}]*font-size:\s*20px;[^}]*font-weight:\s*350;[^}]*line-height:\s*1;/,
+  "Meta Display captions must keep the configured size, weight, and line height"
+);
 assert.match(displaySource, /width:\s*min\(600px,\s*100vw\)/);
 assert.match(displaySource, /targetLines/);
 assert.match(displaySource, /typedLines/);

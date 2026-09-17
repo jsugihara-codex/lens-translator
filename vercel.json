@@ -4,6 +4,7 @@
   "buildCommand": null,
   "outputDirectory": null,
   "rewrites": [
+    { "source": "/assets/opencc-cn2t-1.4.2.js", "destination": "/api/index?__path=/assets/opencc-cn2t-1.4.2.js" },
     { "source": "/", "destination": "/api/index?__path=/" },
     { "source": "/display", "destination": "/api/index?__path=/display" },
     { "source": "/health", "destination": "/api/index?__path=/health" },
